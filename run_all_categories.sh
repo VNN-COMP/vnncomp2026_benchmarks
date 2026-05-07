@@ -1,8 +1,8 @@
 #!/bin/bash
 # run measurements for all categories for a single tool (passed on command line)
-# seven args: 'v1' (version string), tool_scripts_folder, vnncomp_folder, result_csv_file, counterexamples_folder, categories, all|different|first
+# eight args: 'v1' (version string), tool_scripts_folder, vnncomp_folder, result_csv_file, counterexamples_folder, categories, all|different|first, vnnlib_version
 #
-# for example ./run_all_categories.sh v1 ~/repositories/simple_adversarial_generator/vnncomp_scripts . ./out.csv ./counterexamples "test acasxu" all
+# for example ./run_all_categories.sh v1 ~/repositories/simple_adversarial_generator/vnncomp_scripts . ./out.csv ./counterexamples "test acasxu" all 1.0
 
 VERSION_STRING=v1
 SCRIPT_PATH=$(dirname $(realpath $0))
@@ -19,8 +19,8 @@ TIMEOUT_OF_EXECUTED_INSTANCES=0
 MEASURE_OVERHEAD="true"
 
 # check arguments
-if [ "$#" -ne 7 ]; then
-    echo "Expected 7 arguments (got $#): '$VERSION_STRING' (version string), tool_scripts_folder, vnncomp_folder, result_csv_file, counterexamples_folder, categories, run_which_networks (all|different|first)"
+if [ "$#" -ne 8 ]; then
+    echo "Expected 8 arguments (got $#): '$VERSION_STRING' (version string), tool_scripts_folder, vnncomp_folder, result_csv_file, counterexamples_folder, categories, run_which_networks (all|different|first), vnnlib_version"
     exit 1
 fi
 
@@ -36,6 +36,7 @@ COUNTEREXAMPLES_FOLDER=$5
 # list of benchmark category names seperated by spaces
 CATEGORY_LIST=$6
 RUN_WHICH_NETWORKS=$7
+VNNLIB_VERSION=$8
 
 VALID_OPTIONS=("all" "different" "first")
 if [[ ! "${VALID_OPTIONS[*]}" =~ $RUN_WHICH_NETWORKS ]]; then
@@ -70,7 +71,13 @@ echo -n "" > $RESULT_CSV_FILE
 # run on each benchmark category
 for CATEGORY in $CATEGORY_LIST
 do
-    INSTANCES_CSV_PATH="${VNNCOMP_FOLDER}/benchmarks/${CATEGORY}/instances.csv"
+    CATEGORY_PATH="${CATEGORY}/${VNNLIB_VERSION}"
+
+    if [ ! -f "${VNNCOMP_FOLDER}/benchmarks/${CATEGORY_PATH}/instances.csv" ]; then
+        CATEGORY_PATH="${CATEGORY}"
+    fi
+
+    INSTANCES_CSV_PATH="${VNNCOMP_FOLDER}/benchmarks/${CATEGORY_PATH}/instances.csv"
     echo "Running $CATEGORY category from $INSTANCES_CSV_PATH"
     
     # loop through csv file and run on each instance in category
@@ -108,8 +115,8 @@ do
     PREV_ONNX_PATHS=()
     while read ONNX VNNLIB TIMEOUT_CR || [[ $ONNX ]]
     do
-        ONNX_PATH="${VNNCOMP_FOLDER}/benchmarks/${CATEGORY}/${ONNX}"
-        VNNLIB_PATH="${VNNCOMP_FOLDER}/benchmarks/${CATEGORY}/${VNNLIB}"
+        ONNX_PATH="${VNNCOMP_FOLDER}/benchmarks/${CATEGORY_PATH}/${ONNX}"
+        VNNLIB_PATH="${VNNCOMP_FOLDER}/benchmarks/${CATEGORY_PATH}/${VNNLIB}"
 
         if [[ $RUN_WHICH_NETWORKS == "different" && "${PREV_ONNX_PATHS[*]}" =~ "${ONNX_PATH}" && $CATEGORY != "test" ]]; then
             continue
