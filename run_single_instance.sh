@@ -101,6 +101,14 @@ else
 fi
 
 echo "Appending result '$RESULT_STR' to csv file '$RESULT_CSV_FILE'"
-echo "${CATEGORY},${ONNX},${VNNLIB},${PREPARE_RUNTIME},${RESULT_STR},${RUNTIME}" >> $RESULT_CSV_FILE
+python3 - "$RESULT_CSV_FILE" "$CATEGORY" "$ONNX" "$VNNLIB" "$PREPARE_RUNTIME" "$RESULT_STR" "$RUNTIME" <<'PY'
+import csv
+import sys
 
+csv_path = sys.argv[1]
+row = sys.argv[2:]
+
+with open(csv_path, "a", newline="") as f:
+    csv.writer(f).writerow(row)
+PY
 

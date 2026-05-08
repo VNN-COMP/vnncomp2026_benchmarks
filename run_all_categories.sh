@@ -65,6 +65,64 @@ fi
 
 echo "Running measurements with vnncomp folder '$VNNCOMP_FOLDER' for tool scripts in '$TOOL_FOLDER' and saving results to '$RESULT_CSV_FILE'."
 
+emit_instance_rows() {
+    python3 - "$1" "$2" <<'PY'
+import ast
+import csv
+import os
+import sys
+from pathlib import Path
+
+csv_path = sys.argv[1]
+benchmark_base_path = sys.argv[2]
+
+def prefixed_path(path):
+    path = str(path).strip()
+    if os.path.isabs(path):
+        return path
+    return os.path.normpath(os.path.join(benchmark_base_path, path))
+
+def onnx_value_and_stem(value):
+    value = value.strip()
+
+    try:
+        parsed = ast.literal_eval(value)
+    except (SyntaxError, ValueError):
+        return prefixed_path(value), Path(value).stem
+
+    if not isinstance(parsed, list):
+        return prefixed_path(value), Path(value).stem
+
+    prefixed_entries = []
+    tuple_names = []
+
+    for entry in parsed:
+        if not isinstance(entry, (tuple, list)) or len(entry) != 2:
+            raise SystemExit(f"expected ONNX list entries to be 2-tuples, got: {entry!r}")
+
+        name, onnx_path = entry
+        tuple_names.append(str(name))
+        prefixed_entries.append((name, prefixed_path(onnx_path)))
+
+    return repr(prefixed_entries), "_".join(tuple_names)
+
+with open(csv_path, newline="") as f:
+    for line_number, row in enumerate(csv.reader(f), 1):
+        if not row or all(not cell.strip() for cell in row):
+            continue
+
+        if len(row) != 3:
+            raise SystemExit(f"{csv_path}:{line_number}: expected 3 columns, got {len(row)}: {row}")
+
+        onnx, vnnlib, timeout = (cell.strip() for cell in row)
+        onnx_path, onnx_stem = onnx_value_and_stem(onnx)
+        vnnlib_path = prefixed_path(vnnlib)
+        vnnlib_stem = Path(vnnlib).stem
+
+        print("\t".join([onnx_path, vnnlib_path, timeout, onnx_stem, vnnlib_stem]))
+PY
+}
+
 # clear file
 echo -n "" > $RESULT_CSV_FILE
 
@@ -78,11 +136,10 @@ do
     fi
 
     INSTANCES_CSV_PATH="${VNNCOMP_FOLDER}/benchmarks/${CATEGORY_PATH}/instances.csv"
+    BENCHMARK_BASE_PATH="${VNNCOMP_FOLDER}/benchmarks/${CATEGORY_PATH}"
     echo "Running $CATEGORY category from $INSTANCES_CSV_PATH"
     
     # loop through csv file and run on each instance in category
-    PREV_IFS=$IFS
-    IFS=','
     if [ ! -f $INSTANCES_CSV_PATH ]
     then
 	    echo "$INSTANCES_CSV_PATH file not found"
@@ -91,7 +148,7 @@ do
 	    exit 0
     fi
     
-    SUM_TIMEOUT=`awk -F"," '{x+=$3}END{print x}' < $INSTANCES_CSV_PATH`
+    SUM_TIMEOUT=$(emit_instance_rows "$INSTANCES_CSV_PATH" "$BENCHMARK_BASE_PATH" | awk -F '\t' '{x+=$3}END{print x}')
     echo "Category '$CATEGORY' timeout sum: $SUM_TIMEOUT seconds"
     TOTAL_TIMEOUT=$(( $TOTAL_TIMEOUT + $SUM_TIMEOUT ))
    
@@ -113,31 +170,26 @@ do
     fi
 	
     PREV_ONNX_PATHS=()
-    while read ONNX VNNLIB TIMEOUT_CR || [[ $ONNX ]]
+    while IFS=$'\t' read -r ONNX_PATH VNNLIB_PATH TIMEOUT ONNX_FILENAME VNNLIB_FILENAME || [[ $ONNX_PATH ]]
     do
-        ONNX_PATH="${VNNCOMP_FOLDER}/benchmarks/${CATEGORY_PATH}/${ONNX}"
-        VNNLIB_PATH="${VNNCOMP_FOLDER}/benchmarks/${CATEGORY_PATH}/${VNNLIB}"
-
         if [[ $RUN_WHICH_NETWORKS == "different" && "${PREV_ONNX_PATHS[*]}" =~ "${ONNX_PATH}" && $CATEGORY != "test" ]]; then
             continue
         fi
         PREV_ONNX_PATHS+=("$ONNX_PATH")
         
         # remove carriage return from timeout
-        TIMEOUT=$(echo $TIMEOUT_CR | sed -e 's/\r//g')
+        TIMEOUT=$(echo $TIMEOUT | sed -e 's/\r//g')
 
         mkdir -p ${COUNTEREXAMPLES_FOLDER}/${CATEGORY}
-        ONNX_FILENAME=$(echo $ONNX | rev | cut -d "/" -f 1 | cut -c6- | rev )
-        VNNLIB_FILENAME=$(echo $VNNLIB | rev | cut -d "/" -f 1 | cut -c8- | rev)
         COUNTEREXAMPLE_FILE=${COUNTEREXAMPLES_FOLDER}/${CATEGORY}/${ONNX_FILENAME}_${VNNLIB_FILENAME}.counterexample
         # If the benchmark is the safenlp benchmark and the vnnlib file contains "ruarobot", prepend ruarobot_ to the filname
-        if [[ $CATEGORY == "safenlp" && $VNNLIB == *"ruarobot"* ]]; then
+        if [[ $CATEGORY == "safenlp" && $VNNLIB_PATH == *"ruarobot"* ]]; then
             COUNTEREXAMPLE_FILE=${COUNTEREXAMPLES_FOLDER}/${CATEGORY}/ruarobot_${ONNX_FILENAME}_${VNNLIB_FILENAME}.counterexample
         fi
-        if [[ $CATEGORY == "safenlp" && $VNNLIB == *"medical"* ]]; then
+        if [[ $CATEGORY == "safenlp" && $VNNLIB_PATH == *"medical"* ]]; then
             COUNTEREXAMPLE_FILE=${COUNTEREXAMPLES_FOLDER}/${CATEGORY}/medical_${ONNX_FILENAME}_${VNNLIB_FILENAME}.counterexample
         fi
-        $SCRIPT_PATH/run_single_instance.sh v1 $TOOL_FOLDER $CATEGORY $ONNX_PATH $VNNLIB_PATH $TIMEOUT $RESULT_CSV_FILE ${COUNTEREXAMPLE_FILE}
+        $SCRIPT_PATH/run_single_instance.sh v1 "$TOOL_FOLDER" "$CATEGORY" "$ONNX_PATH" "$VNNLIB_PATH" "$TIMEOUT" "$RESULT_CSV_FILE" "${COUNTEREXAMPLE_FILE}"
 
         TIMEOUT_OF_EXECUTED_INSTANCES=$(python3 -c "print($TIMEOUT_OF_EXECUTED_INSTANCES + $TIMEOUT)")
         
@@ -146,15 +198,14 @@ do
         fi
 
 		
-    done < $INSTANCES_CSV_PATH
-    IFS=$PREV_IFS
+    done < <(emit_instance_rows "$INSTANCES_CSV_PATH" "$BENCHMARK_BASE_PATH")
 	
     if [[ $MEASURE_OVERHEAD == "true" && $RUN_WHICH_NETWORKS == "all" ]]; then
 	# measure overhead at end (hardcoded model)
 	ONNX_PATH="${VNNCOMP_FOLDER}/benchmarks/test/onnx/test_nano.onnx"
 	VNNLIB_PATH="${VNNCOMP_FOLDER}/benchmarks/test/vnnlib/test_nano.vnnlib"
 	TIMEOUT=120
-	$SCRIPT_PATH/run_single_instance.sh v1 $TOOL_FOLDER $CATEGORY $ONNX_PATH $VNNLIB_PATH $TIMEOUT $RESULT_CSV_FILE
+	$SCRIPT_PATH/run_single_instance.sh v1 "$TOOL_FOLDER" "$CATEGORY" "$ONNX_PATH" "$VNNLIB_PATH" "$TIMEOUT" "$RESULT_CSV_FILE"
     fi
 
 done
