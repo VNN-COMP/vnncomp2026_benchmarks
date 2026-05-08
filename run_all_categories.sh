@@ -80,7 +80,13 @@ def prefixed_path(path):
     path = str(path).strip()
     if os.path.isabs(path):
         return path
-    return os.path.normpath(os.path.join(benchmark_base_path, path))
+
+    prefixed = os.path.normpath(os.path.join(benchmark_base_path, path))
+
+    if benchmark_base_path.startswith("./") and not prefixed.startswith("./"):
+        prefixed = f"./{prefixed}"
+
+    return prefixed
 
 def onnx_value_and_stem(value):
     value = value.strip()

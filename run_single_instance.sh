@@ -109,6 +109,5 @@ csv_path = sys.argv[1]
 row = sys.argv[2:]
 
 with open(csv_path, "a", newline="") as f:
-    csv.writer(f).writerow(row)
+    csv.writer(f, lineterminator="\n").writerow(row)
 PY
-
