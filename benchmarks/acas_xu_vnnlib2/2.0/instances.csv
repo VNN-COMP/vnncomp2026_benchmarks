@@ -1,5 +1,0 @@
-"[('f', 'onnx/nets/ACASXU_run2a_2_2_batch_2000.onnx'), ('g', 'onnx/pruned_nets/ACASXU_run2a_2_2_batch_2000_pruned5.onnx')]",./vnnlib/instance_0.vnnlib,100
-"[('f', 'onnx/nets/ACASXU_run2a_3_4_batch_2000.onnx'), ('g', 'onnx/pruned_nets/ACASXU_run2a_3_4_batch_2000_pruned5.onnx')]",./vnnlib/instance_1.vnnlib,100
-"[('f', 'onnx/nets/ACASXU_run2a_1_6_batch_2000.onnx'), ('g', 'onnx/pruned_nets/ACASXU_run2a_1_6_batch_2000_pruned5.onnx')]",./vnnlib/instance_2.vnnlib,100
-"[('f', 'onnx/nets/ACASXU_run2a_4_1_batch_2000.onnx'), ('g', 'onnx/pruned_nets/ACASXU_run2a_4_1_batch_2000_pruned5.onnx')]",./vnnlib/instance_3.vnnlib,100
-"[('f', 'onnx/nets/ACASXU_run2a_2_6_batch_2000.onnx'), ('g', 'onnx/pruned_nets/ACASXU_run2a_2_6_batch_2000_pruned5.onnx')]",./vnnlib/instance_4.vnnlib,100
