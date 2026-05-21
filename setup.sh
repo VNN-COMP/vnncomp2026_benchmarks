@@ -1,19 +1,70 @@
 set -e
 
-wget https://rwth-aachen.sciebo.de/s/RapAoed1dxG1PMs/download -O large_models.zip
+python3 scripts/download_sciebo_webdav.py \
+    --base-url "https://rwth-aachen.sciebo.de" \
+    --share-token "a5BCRgjaQdcRfYw" \
+    --password "zTMb5QYQd3" \
+    --output "large_models.zip"
 unzip large_models.zip -d large_models
 
 echo "Moving large benchmark files"
-cd large_models/vnncomp2024/
-for d in *
+for benchmark_dir in large_models/vnncomp2026/*
 do
-    cd $d/seed_896832480/;
-    mkdir -p ../../../../benchmarks/$d/onnx
-    mkdir -p ../../../../benchmarks/$d/vnnlib
-    find . -type f -exec mv "{}" "../../../../benchmarks/$d/{}" \;
-    cd ../../;
+    [ -d "$benchmark_dir" ] || continue
+
+    benchmark=$(basename "$benchmark_dir")
+    seed_dir=""
+    for candidate in "$benchmark_dir"/seed_*
+    do
+        if [ -d "$candidate" ]; then
+            seed_dir="$candidate"
+            break
+        fi
+    done
+
+    if [ -n "$seed_dir" ]; then
+        echo "Moving $benchmark from $(basename "$seed_dir")"
+        find "$seed_dir" -type f | while read -r source_file
+        do
+            relative_path=${source_file#"$seed_dir"/}
+            target_file="benchmarks/$benchmark/$relative_path"
+            mkdir -p "$(dirname "$target_file")"
+            mv "$source_file" "$target_file"
+        done
+        continue
+    fi
+
+    for version_dir in "$benchmark_dir"/*
+    do
+        [ -d "$version_dir" ] || continue
+        version=$(basename "$version_dir")
+
+        case "$version" in
+            [0-9]*.[0-9]*) ;;
+            *) continue ;;
+        esac
+
+        echo "Moving $benchmark $version"
+        find "$version_dir" -type f | while read -r source_file
+        do
+            relative_path=${source_file#"$version_dir"/}
+            target_file="benchmarks/$benchmark/$version/$relative_path"
+            mkdir -p "$(dirname "$target_file")"
+            mv "$source_file" "$target_file"
+        done
+
+        vnnlib_dir="$benchmark_dir/vnnlib$version"
+        if [ -d "$vnnlib_dir" ]; then
+            find "$vnnlib_dir" -type f | while read -r source_file
+            do
+                relative_path=${source_file#"$vnnlib_dir"/}
+                target_file="benchmarks/$benchmark/$version/vnnlib/$relative_path"
+                mkdir -p "$(dirname "$target_file")"
+                mv "$source_file" "$target_file"
+            done
+        fi
+    done
 done
-cd ../..
 rm -r large_models large_models.zip
 
 echo "Unzipping"
