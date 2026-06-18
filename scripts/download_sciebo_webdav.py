@@ -26,16 +26,18 @@ class DownloadInterrupted(Exception):
 
 def parse_args():
     parser = argparse.ArgumentParser(
-        description="Download a password-protected Sciebo public folder as a zip archive."
+        description="Download a Sciebo public folder as a zip archive."
+    )
+    parser.add_argument(
+        "--share-url",
+        help="Full Sciebo public share URL, for example https://rwth-aachen.sciebo.de/s/TOKEN.",
     )
     parser.add_argument(
         "--base-url",
-        required=True,
         help="Sciebo instance base URL, for example https://rwth-aachen.sciebo.de.",
     )
     parser.add_argument(
         "--share-token",
-        required=True,
         help="Public share token from the Sciebo share URL.",
     )
     parser.add_argument(
@@ -68,6 +70,25 @@ def parse_args():
     return parser.parse_args()
 
 
+def sciebo_share_location(args):
+    if args.share_url:
+        parsed = urllib.parse.urlparse(args.share_url)
+        path_parts = [part for part in parsed.path.split("/") if part]
+        if len(path_parts) < 2 or path_parts[0] != "s":
+            raise SystemExit(
+                "--share-url must look like https://host.example/s/SHARE_TOKEN."
+            )
+        base_url = urllib.parse.urlunparse(
+            (parsed.scheme, parsed.netloc, "", "", "", "")
+        )
+        return base_url, path_parts[1]
+
+    if not args.base_url or not args.share_token:
+        raise SystemExit("Provide either --share-url or both --base-url and --share-token.")
+
+    return args.base_url, args.share_token
+
+
 def configure_logging(verbose=False, quiet=False):
     if verbose and quiet:
         raise SystemExit("--verbose and --quiet cannot be used together.")
@@ -96,12 +117,20 @@ def sciebo_password(password_arg):
         LOGGER.debug("Using password from SCIEBO_PASSWORD.")
         return password
 
+    return None
+
+
+def require_sciebo_password(password):
+    if password:
+        return password
+
     if sys.stdin.isatty():
         LOGGER.debug("Prompting for Sciebo share password.")
         return getpass.getpass("Sciebo share password: ")
 
     raise SystemExit(
-        "SCIEBO_PASSWORD is not set and no interactive terminal is available."
+        "This Sciebo share requires a password, but SCIEBO_PASSWORD is not set "
+        "and no interactive terminal is available."
     )
 
 
@@ -113,6 +142,7 @@ def build_download_urls(base_url, share_token):
     base_url = base_url.rstrip("/")
     quoted_token = urllib.parse.quote(share_token)
     return [
+        f"{base_url}/public.php/dav/files/{quoted_token}?accept=zip",
         f"{base_url}/s/{quoted_token}/download?path=%2F&files=",
         f"{base_url}/s/{quoted_token}/download",
     ]
@@ -143,12 +173,14 @@ def authenticate_share(opener, base_url, share_token, password):
     request_token_match = re.search(
         r'name="requesttoken"\s+value="([^"]+)"', share_page
     )
+    if "password-input-form" not in share_page:
+        LOGGER.info("Share page does not require password authentication.")
+        return
+
     if not request_token_match:
-        if "password-input-form" not in share_page:
-            LOGGER.info("Share page does not require password authentication.")
-            return
         raise SystemExit("Could not find the Sciebo request token on the password page.")
 
+    password = require_sciebo_password(password)
     request_token = html.unescape(request_token_match.group(1))
     LOGGER.debug("Found Sciebo request token.")
     form_data = urllib.parse.urlencode(
@@ -383,9 +415,10 @@ def main():
     configure_logging(args.verbose, args.quiet)
     if args.retries < 0:
         raise SystemExit("--retries must be zero or greater.")
+    base_url, share_token = sciebo_share_location(args)
     download(
-        args.base_url,
-        args.share_token,
+        base_url,
+        share_token,
         sciebo_password(args.password),
         args.output,
         retries=args.retries,

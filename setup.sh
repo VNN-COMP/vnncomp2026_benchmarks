@@ -1,9 +1,7 @@
 set -e
 
 python3 scripts/download_sciebo_webdav.py \
-    --base-url "https://rwth-aachen.sciebo.de" \
-    --share-token "a5BCRgjaQdcRfYw" \
-    --password "zTMb5QYQd3" \
+    --share-url "https://rwth-aachen.sciebo.de/s/gEMDMstBiSHAAAS" \
     --output "large_models.zip"
 unzip large_models.zip -d large_models
 
