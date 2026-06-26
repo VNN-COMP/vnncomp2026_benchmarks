@@ -50,7 +50,8 @@ KILL_TIMEOUT=$(echo "$TIMEOUT + 60" | bc)
 PREPARE_INSTANCE_TIMEOUT=600
 
 START=$(date +%s.%N)
-timeout $PREPARE_INSTANCE_TIMEOUT ${TOOL_FOLDER}/prepare_instance.sh "v1" "$CATEGORY" "$ONNX" "$VNNLIB"
+# -k 30: if prepare_instance.sh ignores SIGTERM at the cap, SIGKILL it 30s later.
+timeout -k 30 $PREPARE_INSTANCE_TIMEOUT ${TOOL_FOLDER}/prepare_instance.sh "v1" "$CATEGORY" "$ONNX" "$VNNLIB"
 EXIT_CODE=$?
 END=$(date +%s.%N)
 PREPARE_RUNTIME=$(echo "$END - $START" | bc)
@@ -60,7 +61,7 @@ echo "prepare_instance.sh exit code: $EXIT_CODE, runtime: $PREPARE_RUNTIME"
 if [ 0 != ${EXIT_CODE} ]; then
 	RESULT_STR="prepare_instance_error_$EXIT_CODE"
 	
-	if [ 124 == ${EXIT_CODE} ]; then
+	if [ 124 == ${EXIT_CODE} ] || [ 137 == ${EXIT_CODE} ]; then
 	    echo "Error: prepare_instance.sh exceeded $PREPARE_INSTANCE_TIMEOUT second timeout!"
 	    RESULT_STR="prepare_instance_timeout"
 	fi
@@ -68,7 +69,8 @@ else
 	echo "no_result_in_file" > "out.txt"
 	# run on benchmarks
 	START=$(date +%s.%N)
-	timeout $KILL_TIMEOUT ${TOOL_FOLDER}/run_instance.sh "v1" "$CATEGORY" "$ONNX" "$VNNLIB" "out.txt" "$TIMEOUT"
+	# -k 30: if run_instance.sh ignores SIGTERM at KILL_TIMEOUT, SIGKILL it 30s later.
+	timeout -k 30 $KILL_TIMEOUT ${TOOL_FOLDER}/run_instance.sh "v1" "$CATEGORY" "$ONNX" "$VNNLIB" "out.txt" "$TIMEOUT"
 	
 	EXIT_CODE=$?
 	END=$(date +%s.%N)
@@ -77,7 +79,7 @@ else
 	if [ 0 != ${EXIT_CODE} ]; then
 		RESULT_STR="error_exit_code_${EXIT_CODE}"
 		
-		if [ 124 == ${EXIT_CODE} ]; then
+		if [ 124 == ${EXIT_CODE} ] || [ 137 == ${EXIT_CODE} ]; then
 		    echo "Error: run_instance.sh exceeded $KILL_TIMEOUT second timeout!"
 		    RESULT_STR="run_instance_timeout"
 		fi
