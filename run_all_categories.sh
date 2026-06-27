@@ -135,10 +135,24 @@ echo -n "" > $RESULT_CSV_FILE
 # run on each benchmark category
 for CATEGORY in $CATEGORY_LIST
 do
-    CATEGORY_PATH="${CATEGORY}/${VNNLIB_VERSION}"
+    # From 2026 on, instances.csv always lives in a version subfolder (1.0/ or 2.0/).
+    # VNNLIB_VERSION is only the *preferred* version: if this benchmark does not
+    # provide the preferred version, fall back to the other one. (The bare,
+    # unversioned path is kept last for legacy pre-2026 benchmark layouts.)
+    if [ "$VNNLIB_VERSION" == "2.0" ]; then
+        OTHER_VERSION="1.0"
+    else
+        OTHER_VERSION="2.0"
+    fi
 
+    CATEGORY_PATH="${CATEGORY}/${VNNLIB_VERSION}"
     if [ ! -f "${VNNCOMP_FOLDER}/benchmarks/${CATEGORY_PATH}/instances.csv" ]; then
-        CATEGORY_PATH="${CATEGORY}"
+        if [ -f "${VNNCOMP_FOLDER}/benchmarks/${CATEGORY}/${OTHER_VERSION}/instances.csv" ]; then
+            echo "Preferred vnnlib version '${VNNLIB_VERSION}' not available for '${CATEGORY}', falling back to '${OTHER_VERSION}'"
+            CATEGORY_PATH="${CATEGORY}/${OTHER_VERSION}"
+        else
+            CATEGORY_PATH="${CATEGORY}"
+        fi
     fi
 
     INSTANCES_CSV_PATH="${VNNCOMP_FOLDER}/benchmarks/${CATEGORY_PATH}/instances.csv"
