@@ -1,6 +1,6 @@
 #!/bin/bash
 # run measurements for all categories for a single tool (passed on command line)
-# eight args: 'v1' (version string), tool_scripts_folder, vnncomp_folder, result_csv_file, counterexamples_folder, categories, all|different|first, vnnlib_version
+# eight args: 'v1' (version string), tool_scripts_folder, vnncomp_folder, result_csv_file, counterexamples_folder, categories, all|different|first|random, vnnlib_version
 #
 # for example ./run_all_categories.sh v1 ~/repositories/simple_adversarial_generator/vnncomp_scripts . ./out.csv ./counterexamples "test acasxu" all 1.0
 
@@ -18,9 +18,12 @@ TIMEOUT_OF_EXECUTED_INSTANCES=0
 # if "true", measure overhead after each category
 MEASURE_OVERHEAD="true"
 
+# Number of instances sampled per benchmark when RUN_WHICH_NETWORKS == "random".
+RANDOM_SAMPLE_SIZE=10
+
 # check arguments
 if [ "$#" -ne 8 ]; then
-    echo "Expected 8 arguments (got $#): '$VERSION_STRING' (version string), tool_scripts_folder, vnncomp_folder, result_csv_file, counterexamples_folder, categories, run_which_networks (all|different|first), vnnlib_version"
+    echo "Expected 8 arguments (got $#): '$VERSION_STRING' (version string), tool_scripts_folder, vnncomp_folder, result_csv_file, counterexamples_folder, categories, run_which_networks (all|different|first|random), vnnlib_version"
     exit 1
 fi
 
@@ -38,9 +41,9 @@ CATEGORY_LIST=$6
 RUN_WHICH_NETWORKS=$7
 VNNLIB_VERSION=$8
 
-VALID_OPTIONS=("all" "different" "first")
-if [[ ! "${VALID_OPTIONS[*]}" =~ $RUN_WHICH_NETWORKS ]]; then
-    echo "run all|different|first networks per benchmark"
+VALID_OPTIONS=("all" "different" "first" "random")
+if [[ ! " ${VALID_OPTIONS[*]} " == *" ${RUN_WHICH_NETWORKS} "* ]]; then
+    echo "run all|different|first|random networks per benchmark"
     exit 1
 fi
 
@@ -218,7 +221,16 @@ do
         fi
 
 		
-    done < <(emit_instance_rows "$INSTANCES_CSV_PATH" "$BENCHMARK_BASE_PATH")
+    done < <(
+        # Evaluation mode "random": run a fresh random sample of up to
+        # RANDOM_SAMPLE_SIZE instances per benchmark (shuf -n returns all rows when
+        # fewer exist). The 'test' category is the overhead set and always runs in full.
+        if [[ $RUN_WHICH_NETWORKS == "random" && $CATEGORY != "test" ]]; then
+            emit_instance_rows "$INSTANCES_CSV_PATH" "$BENCHMARK_BASE_PATH" | shuf -n "$RANDOM_SAMPLE_SIZE"
+        else
+            emit_instance_rows "$INSTANCES_CSV_PATH" "$BENCHMARK_BASE_PATH"
+        fi
+    )
 	
     if [[ $MEASURE_OVERHEAD == "true" && $RUN_WHICH_NETWORKS == "all" ]]; then
 		# measure overhead at end using the selected VNNLIB version
