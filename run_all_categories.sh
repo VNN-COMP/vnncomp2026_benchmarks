@@ -193,6 +193,21 @@ do
     fi
 	
     PREV_ONNX_PATHS=()
+    # Materialize the instance list to a real file before looping. When the loop was fed by
+    # `done < <(emit_instance_rows ...)`, that streaming writer blocks once the 64 KiB pipe
+    # fills (~370 rows) and only drains as the loop runs. A tool that kills stray python
+    # mid-run also kills the blocked emit writer, so the loop hits EOF early and silently
+    # skips every instance past the buffered prefix (safenlp_2024 ran ~306-368 of 1080,
+    # depending on the tool). A completed file is immune: emit finishes before any tool runs.
+    INSTANCE_ROWS_FILE=$(mktemp)
+    # Evaluation mode "random": run a fresh random sample of up to RANDOM_SAMPLE_SIZE
+    # instances per benchmark (shuf -n returns all rows when fewer exist). The 'test'
+    # category is the overhead set and always runs in full.
+    if [[ $RUN_WHICH_NETWORKS == "random" && $CATEGORY != "test" ]]; then
+        emit_instance_rows "$INSTANCES_CSV_PATH" "$BENCHMARK_BASE_PATH" | shuf -n "$RANDOM_SAMPLE_SIZE" > "$INSTANCE_ROWS_FILE"
+    else
+        emit_instance_rows "$INSTANCES_CSV_PATH" "$BENCHMARK_BASE_PATH" > "$INSTANCE_ROWS_FILE"
+    fi
     while IFS=$'\t' read -r ONNX_PATH VNNLIB_PATH TIMEOUT ONNX_FILENAME VNNLIB_FILENAME || [[ $ONNX_PATH ]]
     do
         if [[ $RUN_WHICH_NETWORKS == "different" && "${PREV_ONNX_PATHS[*]}" =~ "${ONNX_PATH}" && $CATEGORY != "test" ]]; then
@@ -212,9 +227,9 @@ do
         if [[ $CATEGORY == "safenlp" || $CATEGORY == safenlp_* ]] && [[ $VNNLIB_PATH == *"medical"* ]]; then
             COUNTEREXAMPLE_FILE=${COUNTEREXAMPLES_FOLDER}/${CATEGORY}/medical_${ONNX_FILENAME}_${VNNLIB_FILENAME}.counterexample
         fi
-        # </dev/null: this loop is fed by `done < <(emit_instance_rows ...)`, so the loop's
-        # stdin is the instance stream. Without it, a tool whose process tree reads stdin eats
-        # pending instance rows and the loop ends early, silently skipping instances.
+        # </dev/null: the loop reads instances on its stdin (`done < "$INSTANCE_ROWS_FILE"`),
+        # so a tool whose process tree reads stdin would consume rows and advance the file
+        # offset, making the loop skip instances. Keep the tool off the loop's stdin.
         $SCRIPT_PATH/run_single_instance.sh v1 "$TOOL_FOLDER" "$CATEGORY" "$ONNX_PATH" "$VNNLIB_PATH" "$TIMEOUT" "$RESULT_CSV_FILE" "${COUNTEREXAMPLE_FILE}" </dev/null
 
         TIMEOUT_OF_EXECUTED_INSTANCES=$(python3 -c "print($TIMEOUT_OF_EXECUTED_INSTANCES + $TIMEOUT)")
@@ -224,16 +239,8 @@ do
         fi
 
 		
-    done < <(
-        # Evaluation mode "random": run a fresh random sample of up to
-        # RANDOM_SAMPLE_SIZE instances per benchmark (shuf -n returns all rows when
-        # fewer exist). The 'test' category is the overhead set and always runs in full.
-        if [[ $RUN_WHICH_NETWORKS == "random" && $CATEGORY != "test" ]]; then
-            emit_instance_rows "$INSTANCES_CSV_PATH" "$BENCHMARK_BASE_PATH" | shuf -n "$RANDOM_SAMPLE_SIZE"
-        else
-            emit_instance_rows "$INSTANCES_CSV_PATH" "$BENCHMARK_BASE_PATH"
-        fi
-    )
+    done < "$INSTANCE_ROWS_FILE"
+    rm -f "$INSTANCE_ROWS_FILE"
 	
     if [[ $MEASURE_OVERHEAD == "true" && $RUN_WHICH_NETWORKS == "all" ]]; then
 		# measure overhead at end using the selected VNNLIB version
