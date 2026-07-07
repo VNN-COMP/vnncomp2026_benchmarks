@@ -212,7 +212,10 @@ do
         if [[ $CATEGORY == "safenlp" || $CATEGORY == safenlp_* ]] && [[ $VNNLIB_PATH == *"medical"* ]]; then
             COUNTEREXAMPLE_FILE=${COUNTEREXAMPLES_FOLDER}/${CATEGORY}/medical_${ONNX_FILENAME}_${VNNLIB_FILENAME}.counterexample
         fi
-        $SCRIPT_PATH/run_single_instance.sh v1 "$TOOL_FOLDER" "$CATEGORY" "$ONNX_PATH" "$VNNLIB_PATH" "$TIMEOUT" "$RESULT_CSV_FILE" "${COUNTEREXAMPLE_FILE}"
+        # </dev/null: this loop is fed by `done < <(emit_instance_rows ...)`, so the loop's
+        # stdin is the instance stream. Without it, a tool whose process tree reads stdin eats
+        # pending instance rows and the loop ends early, silently skipping instances.
+        $SCRIPT_PATH/run_single_instance.sh v1 "$TOOL_FOLDER" "$CATEGORY" "$ONNX_PATH" "$VNNLIB_PATH" "$TIMEOUT" "$RESULT_CSV_FILE" "${COUNTEREXAMPLE_FILE}" </dev/null
 
         TIMEOUT_OF_EXECUTED_INSTANCES=$(python3 -c "print($TIMEOUT_OF_EXECUTED_INSTANCES + $TIMEOUT)")
         
@@ -237,7 +240,8 @@ do
 		ONNX_PATH="${VNNCOMP_FOLDER}/benchmarks/test/${VNNLIB_VERSION}/onnx/test_nano.onnx"
 		VNNLIB_PATH="${VNNCOMP_FOLDER}/benchmarks/test/${VNNLIB_VERSION}/vnnlib/test_nano.vnnlib"
 		TIMEOUT=120
-		$SCRIPT_PATH/run_single_instance.sh v1 "$TOOL_FOLDER" "$CATEGORY" "$ONNX_PATH" "$VNNLIB_PATH" "$TIMEOUT" "$RESULT_CSV_FILE"
+		# </dev/null for the same reason as in the instance loop above (keep the tool off stdin).
+		$SCRIPT_PATH/run_single_instance.sh v1 "$TOOL_FOLDER" "$CATEGORY" "$ONNX_PATH" "$VNNLIB_PATH" "$TIMEOUT" "$RESULT_CSV_FILE" </dev/null
     fi
 
 done
